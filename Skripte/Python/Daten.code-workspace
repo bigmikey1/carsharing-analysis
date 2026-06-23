@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../Daten"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../Aggregates"
+		}
+	],
+	"settings": {}
+}
