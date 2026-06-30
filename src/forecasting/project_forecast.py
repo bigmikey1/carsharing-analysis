@@ -1,196 +1,195 @@
-import pandas as pd
-import numpy as np
-import statsmodels.api as sm
 from pathlib import Path
+import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import statsmodels.api as sm
+
 
 # ─────────────────────────────────────────────────────────────
-# Helpers
+# Deutsche Zahlenformatierung
+# ─────────────────────────────────────────────────────────────
+
+def format_de(value, is_currency=False):
+
+    formatted = f"{value:,.2f}"
+    formatted = (
+        formatted
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+    if is_currency:
+        formatted += " €"
+
+    return formatted
+
+# ─────────────────────────────────────────────────────────────
+# Hilfsfunktion für zweizeilige Labels
 # ─────────────────────────────────────────────────────────────
 
 def wrap_label(label, max_len=16):
-    import textwrap
-    return "\n".join(textwrap.wrap(label, max_len))
 
-def format_de(value, is_currency=False):
-    formatted = f"{value:,.2f}"
-    formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
-    if is_currency:
-        formatted += " €"
-    return formatted
+    if len(label) <= max_len:
+        return label
 
+    words = label.split()
 
-# ─────────────────────────────────────────────────────────────
-# Pfade
-# ─────────────────────────────────────────────────────────────
+    line1 = ""
+    line2 = ""
 
-BASE_DIR = Path(__file__).resolve().parent
+    for word in words:
 
-DATA_PATH = (
-    BASE_DIR / ".." / ".." /
-    "Daten" / "Regression (Grundlage Prognose)"
+        if len(line1) + len(word) + 1 <= max_len:
+            line1 += (
+                " " + word
+                if line1
+                else word
+            )
+        else:
+            line2 += (
+                " " + word
+                if line2
+                else word
+            )
+
+    return line1 + "\n" + line2
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+TIMESERIES_PATH = (
+    BASE_DIR
+    / "data"
+    / "processed"
+    / "timeseries_monthly_per_location.csv"
 )
 
-ZEITREIHE_PATH = DATA_PATH / "Zeitreihe_Monat_Standort.csv"
-PROGNOSE_PATH = DATA_PATH / "Prognose_2026_Stationsbezogen.csv"
-
-
-# ─────────────────────────────────────────────────────────────
-# Daten laden
-# ─────────────────────────────────────────────────────────────
-
-df = pd.read_csv(ZEITREIHE_PATH)
-prognose_df = pd.read_csv(PROGNOSE_PATH)
-
-# ─────────────────────────────────────────────────────────────
-# Aggregation Zeitreihe
-# ─────────────────────────────────────────────────────────────
-
-df_agg = (
-    df.groupby(["Jahr", "Monat"])
-    .sum(numeric_only=True)
-    .reset_index()
+FORECAST_PATH = (
+    BASE_DIR
+    / "data"
+    / "forecasts"
+    / "forecast_per_location.csv"
 )
 
-# Zeitindex neu
-df_agg = df_agg.sort_values(["Jahr", "Monat"]).reset_index(drop=True)
-df_agg["t"] = range(1, len(df_agg) + 1)
+OUTPUT_PATH = (
+    BASE_DIR
+    / "data"
+    / "forecasts"
+    / "forecast_total.csv"
+)
 
-# ─────────────────────────────────────────────────────────────
-# IST 2025 gesamt
-# ─────────────────────────────────────────────────────────────
+OUTPUT_PATH.parent.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
-ist_2025 = {
-    "Fahrten": df_agg[df_agg["Jahr"] == 2025]["Anzahl_Fahrten"].sum(),
-    "Stunden": df_agg[df_agg["Jahr"] == 2025]["Summe_Stunden"].sum(),
-    "KM": df_agg[df_agg["Jahr"] == 2025]["Summe_KM"].sum(),
-    "Nutzungsentgelt (brutto)": df_agg[df_agg["Jahr"] == 2025]["Summe_Fahrtkosten"].sum(),
-    "Nutzungsentgelt (netto, nach Guthaben)": df_agg[df_agg["Jahr"] == 2025]["Summe_Fahrtkosten_abzgl_Guthaben"].sum()
+
+
+print("BASE_DIR:", BASE_DIR)
+print("TIMESERIES:", TIMESERIES_PATH.exists())
+print("FORECAST:", FORECAST_PATH.exists())
+
+
+zeit_df = pd.read_csv(TIMESERIES_PATH)
+
+prognose_df = pd.read_csv(FORECAST_PATH)
+
+
+REPORT_YEAR = 2026
+BASE_YEAR = 2025
+
+forecast_total = {
+
+    "Anzahl_Fahrten_2026":
+        prognose_df["Anzahl_Fahrten_2026"].sum(),
+
+    "Summe_Stunden_2026":
+        prognose_df["Summe_Stunden_2026"].sum(),
+
+    "Summe_KM_2026":
+        prognose_df["Summe_KM_2026"].sum(),
+
+    "Summe_Fahrtkosten_2026":
+        prognose_df["Summe_Fahrtkosten_2026"].sum(),
+
+    "Summe_Fahrtkosten_abzgl_Guthaben_2026":
+        prognose_df[
+            "Summe_Fahrtkosten_abzgl_Guthaben_2026"
+        ].sum()
 }
-
-# ─────────────────────────────────────────────────────────────
-# Prognose 2026 gesamt
-# ─────────────────────────────────────────────────────────────
-
-prognose_2026 = {
-    "Fahrten": prognose_df["Anzahl_Fahrten_2026"].sum(),
-    "Stunden": prognose_df["Summe_Stunden_2026"].sum(),
-    "KM": prognose_df["Summe_KM_2026"].sum(),
-    "Nutzungsentgelt (brutto)": prognose_df["Summe_Fahrtkosten_2026"].sum(),
-    "Nutzungsentgelt (netto, nach Guthaben)": prognose_df["Summe_Fahrtkosten_abzgl_Guthaben_2026"].sum()
-}
-
-# ─────────────────────────────────────────────────────────────
-# R² Gesamt berechnen
-# ─────────────────────────────────────────────────────────────
 
 r2_values = {}
 
 mapping = {
-    "Fahrten": "Anzahl_Fahrten",
-    "Stunden": "Summe_Stunden",
-    "KM": "Summe_KM",
-    "Nutzungsentgelt (brutto)": "Summe_Fahrtkosten"
+    "Anzahl_Fahrten":
+        "Anzahl_Fahrten",
+
+    "Summe_Stunden":
+        "Summe_Stunden",
+
+    "Summe_KM":
+        "Summe_KM",
+
+    "Summe_Fahrtkosten":
+        "Summe_Fahrtkosten",
+
+    "Summe_Fahrtkosten_abzgl_Guthaben":
+        "Summe_Fahrtkosten_abzgl_Guthaben"
 }
 
-for name, col in mapping.items():
-
-    df_hist = df_agg[df_agg["Jahr"] <= 2026]
-
-    X = sm.add_constant(df_hist["t"])
-    y = df_hist[col]
-
-    model = sm.OLS(y, X).fit()
-
-    r2_values[name] = round(model.rsquared, 3)
-
-# ─────────────────────────────────────────────────────────────
-# Plot-Daten
-# ─────────────────────────────────────────────────────────────
-
-plot_df = pd.DataFrame({
-    "Kennzahl": list(ist_2025.keys()),
-    "Ist 2025": list(ist_2025.values()),
-    "Prognose 2026": list(prognose_2026.values())
-})
-
-plot_df_long = plot_df.melt(
-    id_vars="Kennzahl",
-    var_name="Typ",
-    value_name="Wert"
+df_agg = (
+    zeit_df
+    .groupby(["Jahr", "Monat"])
+    .sum(numeric_only=True)
+    .reset_index()
 )
 
-plot_df_long["Kennzahl_wrap"] = plot_df_long["Kennzahl"].apply(wrap_label)
-
-# ─────────────────────────────────────────────────────────────
-# Plot
-# ─────────────────────────────────────────────────────────────
-
-plt.rcParams["font.family"] = "Arial"
-sns.set_style("whitegrid")
-
-plt.figure(figsize=(12, 8))
-
-ax = sns.barplot(
-    data=plot_df_long,
-    x="Kennzahl_wrap",
-    y="Wert",
-    hue="Typ",
-    palette={
-        "Ist 2025": "#4C72B0",
-        "Prognose 2026": "#DD8452"
-    }
+df_agg = (
+    df_agg
+    .sort_values(["Jahr", "Monat"])
+    .reset_index(drop=True)
 )
 
-# ─────────────────────────────────────────────────────────────
-# Werte auf Balken
-# ─────────────────────────────────────────────────────────────
+df_agg["t"] = range(
+    1,
+    len(df_agg) + 1
+)
 
-for i, p in enumerate(ax.patches):
+for output_name, col in mapping.items():
 
-    value = p.get_height()
+    X = sm.add_constant(df_agg["t"])
 
-    if value < 0.005:
-        continue
+    y = df_agg[col]
 
-    kpi = plot_df_long.iloc[i % len(plot_df_long)]["Kennzahl"]
+    model = sm.OLS(
+        y,
+        X
+    ).fit()
 
-    is_currency = "Nutzungsentgelt" in kpi
-
-    label = format_de(value, is_currency)
-
-    ax.annotate(
-        label,
-        (p.get_x() + p.get_width() / 2., value),
-        ha='center',
-        va='bottom',
-        fontsize=9
+    r2_values[
+        f"{output_name}_R2"
+    ] = round(
+        model.rsquared,
+        3
     )
 
-# ─────────────────────────────────────────────────────────────
-# R² Text
-# ─────────────────────────────────────────────────────────────
-
-r2_text = "\n".join([
-    f"R² {k}: {str(v).replace('.', ',')}"
-    for k, v in r2_values.items()
-])
-
-plt.text(
-    0,
-    plot_df_long["Wert"].max() * 0.95,
-    r2_text,
-    fontsize=9,
-    va='top'
+forecast_total.update(
+    r2_values
 )
 
-# ─────────────────────────────────────────────────────────────
+forecast_total_df = pd.DataFrame(
+    [forecast_total]
+)
 
-plt.title("Gesamtprojekt – Ist 2025 vs Prognose 2026")
-plt.ylabel("")
-plt.xlabel("")
+forecast_total_df.to_csv(
+    OUTPUT_PATH,
+    index=False
+)
 
-plt.tight_layout()
-plt.savefig("Gesamtprojekt_vgl_prognose26.png")
-plt.show()
+print(
+    "Gesamtforecast gespeichert:"
+)
+
+print(
+    OUTPUT_PATH
+)

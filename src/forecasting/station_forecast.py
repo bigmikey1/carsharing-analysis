@@ -48,29 +48,21 @@ def format_de(value, is_currency=False):
 # Pfade
 # ─────────────────────────────────────────────────────────────
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 CSV_PATH = (
     BASE_DIR
-    / ".."
-    / ".."
-    / "Daten"
-    / "Regression (Grundlage Prognose)"
-    / "Zeitreihe_Monat_Standort.csv"
-).resolve()
+    / "data"
+    / "processed"
+    / "timeseries_monthly_per_location.csv"
+)
 
 OUTPUT_PATH = (
     BASE_DIR
-    / ".."
-    / ".."
-    / "Daten"
-    / "Regression (Grundlage Prognose)"
-    / "Prognose_2026_Stationsbezogen.csv"
-).resolve()
-
-print("CSV Pfad:", CSV_PATH)
-print("Existiert:", CSV_PATH.exists())
-
+    / "data"
+    / "forecasts"
+    / "forecast_per_location.csv"
+)
 
 # ─────────────────────────────────────────────────────────────
 # Daten laden
@@ -223,6 +215,39 @@ for station in df["Stationsname"].unique():
         brutto_gesamt_2026
     )
 
+    # ─────────────────────────────────────────────────────────
+    # R² Netto-Modell
+    # ─────────────────────────────────────────────────────────
+
+    netto_real = df_station[
+        "Summe_Fahrtkosten_abzgl_Guthaben"
+    ]
+
+    netto_pred_hist = (
+        df_station["Summe_Fahrtkosten"]
+        * (1 - guthabenquote)
+    )
+
+    ss_res = np.sum(
+        (netto_real - netto_pred_hist) ** 2
+    )
+
+    ss_tot = np.sum(
+        (netto_real - netto_real.mean()) ** 2
+    )
+
+    if ss_tot > 0:
+        r2_netto = 1 - (ss_res / ss_tot)
+    else:
+        r2_netto = np.nan
+
+    result_row[
+        "Summe_Fahrtkosten_abzgl_Guthaben_R2"
+    ] = round(
+        r2_netto,
+        3
+    )
+
     result_row[
         "Summe_Fahrtkosten_abzgl_Guthaben_2026"
     ] = round(
@@ -242,44 +267,42 @@ for station in df["Stationsname"].unique():
 
     for kennzahl in STANDARD_KENNZAHLEN:
 
-            y = df_station[kennzahl]
+        y = df_station[kennzahl]
 
-            model = sm.OLS(
-                y,
-                X
-            ).fit()
+        model = sm.OLS(
+            y,
+            X
+        ).fit()
 
-            forecast = model.predict(X_future)
+        forecast = model.predict(X_future)
 
-            forecast = np.maximum(forecast, 0)
+        forecast = np.maximum(forecast, 0)
 
-            ist_2026 = df_station[
-                df_station["Jahr"] == 2026
-            ][kennzahl].sum()
+        ist_2026 = df_station[
+            df_station["Jahr"] == 2026
+        ][kennzahl].sum()
 
-            gesamt_2026 = (
-                ist_2026 +
-                forecast.sum()
-            )
+        gesamt_2026 = (
+            ist_2026 +
+            forecast.sum()
+        )
 
-            result_row[f"{kennzahl}_2026"] = round(
-                gesamt_2026,
-                2
-            )
+        result_row[f"{kennzahl}_2026"] = round(
+            gesamt_2026,
+            2
+        )
 
-            result_row[f"{kennzahl}_Trend_monat"] = round(
-                model.params["t"],
-                3
-            )
+        result_row[f"{kennzahl}_Trend_monat"] = round(
+            model.params["t"],
+            3
+        )
 
-            result_row[f"{kennzahl}_R2"] = round(
-                model.rsquared,
-                3
-            )
+        result_row[f"{kennzahl}_R2"] = round(
+            model.rsquared,
+            3
+        )
 
-    ergebnisse.append(result_row)
 
-    # R² für Fahrtkosten über OLS zusätzlich berechnen (nur zur Bewertung, weil ExponentialSmoothing kein R² liefert)
     model_brutto_r2 = sm.OLS(
         y_brutto,
         X
@@ -290,9 +313,22 @@ for station in df["Stationsname"].unique():
         3
     )
 
+    ergebnisse.append(result_row)
+
+
 # ─────────────────────────────────────────────────────────────
 # Export
 # ─────────────────────────────────────────────────────────────
+
+
+prognose_df = pd.DataFrame(ergebnisse)
+
+print(prognose_df.shape)
+
+print(
+    prognose_df["Stationsname"]
+    .value_counts()
+)
 
 prognose_df = pd.DataFrame(ergebnisse)
 
@@ -303,175 +339,3 @@ prognose_df.to_csv(
 
 print("Prognose je Station exportiert")
 print(OUTPUT_PATH)
-
-# ─────────────────────────────────────────────────────────────
-# Einstellungen für Plots
-# ─────────────────────────────────────────────────────────────
-
-plt.rcParams["font.family"] = "Arial"
-
-sns.set_style("whitegrid")
-
-zeit_df = df.copy()
-
-# ─────────────────────────────────────────────────────────────
-# Einzelplots
-# ─────────────────────────────────────────────────────────────
-
-for station in prognose_df["Stationsname"]:
-
-    row = prognose_df[
-        prognose_df["Stationsname"] == station
-    ]
-
-    df_station = zeit_df[
-        zeit_df["Stationsname"] == station
-    ]
-
-
-    ist_2025 = {
-        "Fahrten":
-            df_station[df_station["Jahr"] == 2025]["Anzahl_Fahrten"].sum(),
-
-        "Stunden":
-            df_station[df_station["Jahr"] == 2025]["Summe_Stunden"].sum(),
-
-        "KM":
-            df_station[df_station["Jahr"] == 2025]["Summe_KM"].sum(),
-
-        "Nutzungsentgelt (brutto)":
-            df_station[df_station["Jahr"] == 2025]["Summe_Fahrtkosten"].sum(),
-
-        "Nutzungsentgelt (netto, nach Guthaben)":
-            df_station[df_station["Jahr"] == 2025]["Summe_Fahrtkosten_abzgl_Guthaben"].sum()
-    }
-
-    prognose_2026 = {
-        "Fahrten":
-            row["Anzahl_Fahrten_2026"].values[0],
-
-        "Stunden":
-            row["Summe_Stunden_2026"].values[0],
-
-        "KM":
-            row["Summe_KM_2026"].values[0],
-
-        "Nutzungsentgelt (brutto)":
-            row["Summe_Fahrtkosten_2026"].values[0],
-
-        "Nutzungsentgelt (netto, nach Guthaben)":
-            row["Summe_Fahrtkosten_abzgl_Guthaben_2026"].values[0]
-    }
-
-
-    plot_df = pd.DataFrame({
-        "Kennzahl": list(ist_2025.keys()),
-        "Ist 2025": list(ist_2025.values()),
-        "Prognose 2026": list(prognose_2026.values())
-    })
-
-    plot_df_long = plot_df.melt(
-        id_vars="Kennzahl",
-        var_name="Typ",
-        value_name="Wert"
-    )
-
-    plot_df_long["Kennzahl_wrap"] = (
-        plot_df_long["Kennzahl"]
-        .apply(wrap_label)
-    )
-
-    plt.figure(figsize=(11, 7))
-
-    ax = sns.barplot(
-        data=plot_df_long,
-        x="Kennzahl_wrap",
-        y="Wert",
-        hue="Typ",
-        palette={
-            "Ist 2025": "#4C72B0",
-            "Prognose 2026": "#DD8452"
-        }
-    )
-
-    # Werte auf Balken annotieren
-    for i, p in enumerate(ax.patches):
-
-        value = p.get_height()
-
-        if value < 0.005:
-            continue
-
-        kpi = plot_df_long.iloc[
-            i % len(plot_df_long)
-        ]["Kennzahl"]
-
-        is_currency = (
-            "Nutzungsentgelt" in kpi
-        )
-
-        label = format_de(
-            value,
-            is_currency
-        )
-
-        ax.annotate(
-            label,
-            (
-                p.get_x() + p.get_width() / 2.,
-                value
-            ),
-            ha='center',
-            va='bottom',
-            fontsize=8
-        )
-
-    # ── R² für alle Kennzahlen anzeigen ───────────────────────
-
-    r2_text = ""
-
-    r2_mapping = {
-        "Fahrten": "Anzahl_Fahrten_R2",
-        "Stunden": "Summe_Stunden_R2",
-        "KM": "Summe_KM_R2",
-        "Nutzungsentgelt (brutto)": "Summe_Fahrtkosten_R2",
-        "Nutzungsentgelt (netto, nach Guthaben)": "Summe_Fahrtkosten_abzgl_Guthaben_R2"
-    }
-
-    for kpi, col in r2_mapping.items():
-
-        if col in row.columns:
-            val = row[col].values[0]
-
-            if pd.isna(val):
-                val_str = "-"
-            else:
-                val_str = str(val).replace(".", ",")
-
-            r2_text += f"R² {kpi}: {val_str}\n"
-
-    # Plotten
-    plt.text(
-        0,
-        plot_df_long["Wert"].max() * 0.95,
-        r2_text,
-        fontsize=8,
-        va='top'
-    )
-    # Titel
-    plt.title(
-        f"{station} – Ist 2025 vs Prognose 2026"
-    )
-    # Achsenbeschriftungen
-    plt.ylabel("")
-    plt.xlabel("")
-
-    plt.tight_layout()
-    # Speichern
-    plt.savefig(
-        f"{station}_vgl_prognose26.png"
-    )
-    # Anzeigen
-    plt.show()
-
-    plt.close()
