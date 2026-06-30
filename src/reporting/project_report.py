@@ -5,13 +5,6 @@ from pathlib import Path
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-
-from pathlib import Path
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-
 # ─────────────────────────────────────────────────────────────
 # Deutsche Zahlenformatierung
 # ─────────────────────────────────────────────────────────────
@@ -75,14 +68,14 @@ FORECAST_PATH = (
     BASE_DIR
     / "data"
     / "forecasts"
-    / "forecast_per_location.csv"
+    / "forecast_total.csv"
 )
 
 OUTPUT_FOLDER = (
     BASE_DIR
     / "reports"
     / "figures"
-    / "per_location"
+    / "total"
 )
 
 OUTPUT_FOLDER.mkdir(
@@ -105,63 +98,186 @@ REPORT_YEAR = 2026
 BASE_YEAR = 2025
 
 # ─────────────────────────────────────────────────────────────
-# Aggregation Zeitreihe
+# Gesamtprojekt aggregieren
 # ─────────────────────────────────────────────────────────────
 
 df_agg = (
-    df.groupby(["Jahr", "Monat"])
-    .sum(numeric_only=True)
+    zeit_df
+    .groupby("Jahr")
+    .agg(
+        Anzahl_Fahrten=("Anzahl_Fahrten", "sum"),
+        Summe_Stunden=("Summe_Stunden", "sum"),
+        Summe_KM=("Summe_KM", "sum"),
+        Summe_Fahrtkosten=("Summe_Fahrtkosten", "sum"),
+        Summe_Fahrtkosten_abzgl_Guthaben=(
+            "Summe_Fahrtkosten_abzgl_Guthaben",
+            "sum"
+        )
+    )
     .reset_index()
 )
 
-# Zeitindex neu
-df_agg = df_agg.sort_values(["Jahr", "Monat"]).reset_index(drop=True)
-df_agg["t"] = range(1, len(df_agg) + 1)
-
-# ─────────────────────────────────────────────────────────────
-# IST 2025 gesamt
-# ─────────────────────────────────────────────────────────────
+row = prognose_df.iloc[0]
 
 ist_2025 = {
-    "Fahrten": df_agg[df_agg["Jahr"] == 2025]["Anzahl_Fahrten"].sum(),
-    "Stunden": df_agg[df_agg["Jahr"] == 2025]["Summe_Stunden"].sum(),
-    "KM": df_agg[df_agg["Jahr"] == 2025]["Summe_KM"].sum(),
-    "Nutzungsentgelt (brutto)": df_agg[df_agg["Jahr"] == 2025]["Summe_Fahrtkosten"].sum(),
-    "Nutzungsentgelt (netto, nach Guthaben)": df_agg[df_agg["Jahr"] == 2025]["Summe_Fahrtkosten_abzgl_Guthaben"].sum()
-}
+    "Fahrten":
+        df_agg.loc[
+            df_agg["Jahr"] == BASE_YEAR,
+            "Anzahl_Fahrten"
+        ].iloc[0],
 
-# ─────────────────────────────────────────────────────────────
-# Prognose 2026 gesamt
-# ─────────────────────────────────────────────────────────────
+    "Stunden":
+        df_agg.loc[
+            df_agg["Jahr"] == BASE_YEAR,
+            "Summe_Stunden"
+        ].iloc[0],
+
+    "KM":
+        df_agg.loc[
+            df_agg["Jahr"] == BASE_YEAR,
+            "Summe_KM"
+        ].iloc[0],
+
+    "Nutzungsentgelt (brutto)":
+        df_agg.loc[
+            df_agg["Jahr"] == BASE_YEAR,
+            "Summe_Fahrtkosten"
+        ].iloc[0],
+
+    "Nutzungsentgelt (netto, nach Guthaben)":
+        df_agg.loc[
+            df_agg["Jahr"] == BASE_YEAR,
+            "Summe_Fahrtkosten_abzgl_Guthaben"
+        ].iloc[0]
+}
 
 prognose_2026 = {
-    "Fahrten": prognose_df["Anzahl_Fahrten_2026"].sum(),
-    "Stunden": prognose_df["Summe_Stunden_2026"].sum(),
-    "KM": prognose_df["Summe_KM_2026"].sum(),
-    "Nutzungsentgelt (brutto)": prognose_df["Summe_Fahrtkosten_2026"].sum(),
-    "Nutzungsentgelt (netto, nach Guthaben)": prognose_df["Summe_Fahrtkosten_abzgl_Guthaben_2026"].sum()
+    "Fahrten":
+        row["Anzahl_Fahrten_2026"],
+
+    "Stunden":
+        row["Summe_Stunden_2026"],
+
+    "KM":
+        row["Summe_KM_2026"],
+
+    "Nutzungsentgelt (brutto)":
+        row["Summe_Fahrtkosten_2026"],
+
+    "Nutzungsentgelt (netto, nach Guthaben)":
+        row["Summe_Fahrtkosten_abzgl_Guthaben_2026"]
 }
 
-# ─────────────────────────────────────────────────────────────
-# R² Gesamt berechnen
-# ─────────────────────────────────────────────────────────────
+plot_df = pd.DataFrame({
+        "Kennzahl": list(ist_2025.keys()),
+        "Ist 2025": list(ist_2025.values()),
+        "Prognose 2026": list(prognose_2026.values())
+    })
 
-r2_values = {}
+plot_df_long = plot_df.melt(
+        id_vars="Kennzahl",
+        var_name="Typ",
+        value_name="Wert"
+    )
 
-mapping = {
-    "Fahrten": "Anzahl_Fahrten",
-    "Stunden": "Summe_Stunden",
-    "KM": "Summe_KM",
-    "Nutzungsentgelt (brutto)": "Summe_Fahrtkosten"
-}
+plot_df_long["Kennzahl_wrap"] = (
+        plot_df_long["Kennzahl"]
+        .apply(wrap_label)
+    )
 
-for name, col in mapping.items():
+plt.figure(figsize=(11, 7))
 
-    df_hist = df_agg[df_agg["Jahr"] <= 2026]
+ax = sns.barplot(
+        data=plot_df_long,
+        x="Kennzahl_wrap",
+        y="Wert",
+        hue="Typ",
+        palette={
+            "Ist 2025": "#4C72B0",
+            "Prognose 2026": "#DD8452"
+        }
+    )
 
-    X = sm.add_constant(df_hist["t"])
-    y = df_hist[col]
+    # Werte auf Balken annotieren
+for i, p in enumerate(ax.patches):
 
-    model = sm.OLS(y, X).fit()
+        value = p.get_height()
 
-    r2_values[name] = round(model.rsquared, 3)
+        if value < 0.005:
+            continue
+
+        kpi = plot_df_long.iloc[
+            i % len(plot_df_long)
+        ]["Kennzahl"]
+
+        is_currency = (
+            "Nutzungsentgelt" in kpi
+        )
+
+        label = format_de(
+            value,
+            is_currency
+        )
+
+        ax.annotate(
+            label,
+            (
+                p.get_x() + p.get_width() / 2.,
+                value
+            ),
+            ha='center',
+            va='bottom',
+            fontsize=8
+        )
+
+    # ── R² für alle Kennzahlen anzeigen ───────────────────────
+
+r2_text = ""
+
+r2_mapping = {
+    "Fahrten": "Anzahl_Fahrten_R2",
+    "Stunden": "Summe_Stunden_R2",
+    "KM": "Summe_KM_R2",
+    "Nutzungsentgelt (brutto)": "Summe_Fahrtkosten_R2",
+    "Nutzungsentgelt (netto, nach Guthaben)": "Summe_Fahrtkosten_abzgl_Guthaben_R2"
+    }
+
+for kpi, col in r2_mapping.items():
+
+    if col in row.index:
+        val = row[col]
+
+        if pd.isna(val):
+            val_str = "-"
+        else:
+            val_str = f"{val:.3f}".replace(".", ",")
+
+        r2_text += f"R² {kpi}: {val_str}\n"
+
+    # Plotten
+plt.text(
+    0,
+    plot_df_long["Wert"].max() * 0.95,
+    r2_text,
+    fontsize=8,
+    va='top'
+    )
+    # Titel
+plt.title(
+    f"Gesamtprojekt – Ist {BASE_YEAR} vs Forecast {REPORT_YEAR}"
+    )
+
+    # Achsenbeschriftungen
+plt.ylabel("")
+plt.xlabel("")
+plt.tight_layout()
+    
+    # Speichern
+plt.savefig(
+    OUTPUT_FOLDER
+    / f"Gesamtprojekt_vgl_forecast{str(REPORT_YEAR)[-2:]}.png",
+    dpi=300,
+    bbox_inches="tight"
+    )
+
+plt.close()
