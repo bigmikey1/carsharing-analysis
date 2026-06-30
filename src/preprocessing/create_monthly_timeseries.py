@@ -2,10 +2,19 @@ import pandas as pd
 from pathlib import Path
 
 #Konfiguration 
-DATEN_ORDNER = Path("Daten") / "Buchungen (Export)"
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+DATEN_ORDNER = (
+    BASE_DIR
+    / "data"
+    / "input"
+    / "bookings"
+    / "ano"
+)
+
 
 # Alle CSV-Dateien rekursiv einsammeln
-csv_dateien = list(DATEN_ORDNER.rglob("*.csv"))
+csv_dateien = list(DATEN_ORDNER.rglob("*_ano.csv"))
 
 print(f"Gefundene CSV-Dateien: {len(csv_dateien)}")
 for pfad in csv_dateien:
@@ -75,19 +84,24 @@ monats_df = (
     .reset_index()
 )
 
-# ── Zeitindex t erzeugen (über alle Monate hinweg fortlaufend) ─
-monats_df = monats_df.sort_values(["Jahr", "Monat"])
-monats_df["t"] = range(1, len(monats_df) + 1)
-
 # Ergebnis als CSV exportieren
+
+OUTPUT_PATH = (
+    BASE_DIR
+    / "data"
+    / "processed"
+    / "timeseries_monthly_per_location.csv"
+)
+
 monats_df.to_csv(
-    "Zeitreihe_Monat_Standort.csv",
+    OUTPUT_PATH,
     index=False
 )
 
-print("Zeitreihe_Monat_Standort.csv wurde erfolgreich erstellt.")
+
+print("Zeitreihendatei wurde erfolgreich erstellt.")
 print(monats_df.head())
 
-# Die Ergebnisdatei "Zeitreihe_Monat_Standort.csv" enthält nun die monatlichen Aggregationen pro 
+# Die Ergebnisdatei "timeseries_monthly_per_location.csv" enthält nun die monatlichen Aggregationen pro 
 # Station und dient als Grundlage für die Zeitreihenanalyse. Jede Zeile repräsentiert eine Station in einem bestimmten Monat,
 #  mit den entsprechenden Fahrtdaten und einem fortlaufenden Zeitindex "t".
