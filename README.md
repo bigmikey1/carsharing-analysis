@@ -295,3 +295,5 @@ Version 1.0
 Stand: Juni 2026
 
 Erste vollständig reproduzierbare Forecasting- und Reporting-Pipeline für das kommunale Carsharing-Netzwerk.
+
+Ziele: Mehr Modelle trainieren und testen
